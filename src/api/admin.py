@@ -639,8 +639,15 @@ async def activate_username(
             raise HTTPException(status_code=404, detail="Token not found")
 
         # Get user info to check current username
-        user_info = await token_manager.get_user_info(token_obj.token)
+        print(f"🔍 [activate-username] Getting user info for token {token_id}...")
+        try:
+            user_info = await token_manager.get_user_info(token_obj.token)
+        except Exception as e:
+            print(f"❌ [activate-username] Failed to get user info: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"获取用户信息失败: {str(e)}")
+        
         current_username = user_info.get("username")
+        print(f"📋 [activate-username] Current username: {current_username}")
 
         if current_username:
             return {
@@ -651,15 +658,26 @@ async def activate_username(
             }
 
         # Generate and set random username
+        print(f"🔄 [activate-username] Username is null, generating random username...")
         max_attempts = 5
         for attempt in range(max_attempts):
             generated_username = token_manager._generate_random_username()
+            print(f"🔄 [activate-username] Attempt {attempt + 1}/{max_attempts}: trying username '{generated_username}'")
 
             # Check if username is available
-            if await token_manager.check_username_available(token_obj.token, generated_username):
+            try:
+                is_available = await token_manager.check_username_available(token_obj.token, generated_username)
+            except Exception as e:
+                print(f"❌ [activate-username] Failed to check username availability: {str(e)}")
+                if attempt == max_attempts - 1:
+                    raise HTTPException(status_code=500, detail=f"检查用户名可用性失败: {str(e)}")
+                continue
+            
+            if is_available:
                 # Set the username
                 try:
                     result = await token_manager.set_username(token_obj.token, generated_username)
+                    print(f"✅ [activate-username] Username set successfully: {generated_username}")
                     return {
                         "success": True,
                         "message": f"用户名设置成功: {generated_username}",
@@ -667,14 +685,18 @@ async def activate_username(
                         "already_set": False
                     }
                 except Exception as e:
+                    print(f"❌ [activate-username] Failed to set username: {str(e)}")
                     if attempt == max_attempts - 1:
                         raise HTTPException(status_code=500, detail=f"用户名设置失败: {str(e)}")
+            else:
+                print(f"⚠️ [activate-username] Username '{generated_username}' is not available")
 
         raise HTTPException(status_code=500, detail="无法找到可用的用户名，请稍后重试")
 
     except HTTPException:
         raise
     except Exception as e:
+        print(f"❌ [activate-username] Unexpected error: {str(e)}")
         raise HTTPException(status_code=500, detail=f"激活用户名失败: {str(e)}")
 
 # Sora2 endpoints
