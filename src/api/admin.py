@@ -625,6 +625,58 @@ async def get_stats(token: str = Depends(verify_admin_token)):
         "today_errors": today_errors
     }
 
+# Username activation endpoint
+@router.post("/api/tokens/{token_id}/activate-username")
+async def activate_username(
+    token_id: int,
+    token: str = Depends(verify_admin_token)
+):
+    """Activate username for a token (auto-generate and set username if not set)"""
+    try:
+        # Get token
+        token_obj = await db.get_token(token_id)
+        if not token_obj:
+            raise HTTPException(status_code=404, detail="Token not found")
+
+        # Get user info to check current username
+        user_info = await token_manager.get_user_info(token_obj.token)
+        current_username = user_info.get("username")
+
+        if current_username:
+            return {
+                "success": True,
+                "message": f"用户名已存在: {current_username}",
+                "username": current_username,
+                "already_set": True
+            }
+
+        # Generate and set random username
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            generated_username = token_manager._generate_random_username()
+
+            # Check if username is available
+            if await token_manager.check_username_available(token_obj.token, generated_username):
+                # Set the username
+                try:
+                    result = await token_manager.set_username(token_obj.token, generated_username)
+                    return {
+                        "success": True,
+                        "message": f"用户名设置成功: {generated_username}",
+                        "username": generated_username,
+                        "already_set": False
+                    }
+                except Exception as e:
+                    if attempt == max_attempts - 1:
+                        raise HTTPException(status_code=500, detail=f"用户名设置失败: {str(e)}")
+
+        raise HTTPException(status_code=500, detail="无法找到可用的用户名，请稍后重试")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"激活用户名失败: {str(e)}")
+
 # Sora2 endpoints
 @router.post("/api/tokens/{token_id}/sora2/activate")
 async def activate_sora2(
