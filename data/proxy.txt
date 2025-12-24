@@ -1,0 +1,6 @@
+# 代理池配置文件
+# 每行一个代理地址，支持 HTTP 和 SOCKS5 代理
+# 格式示例:
+# http://127.0.0.1:7890
+# socks5://127.0.0.1:1080
+# http://user:pass@proxy.example.com:8080

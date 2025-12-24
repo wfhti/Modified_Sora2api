@@ -112,6 +112,7 @@ class UpdateAdminConfigRequest(BaseModel):
 class UpdateProxyConfigRequest(BaseModel):
     proxy_enabled: bool
     proxy_url: Optional[str] = None
+    proxy_pool_enabled: bool = False
 
 class UpdateAdminPasswordRequest(BaseModel):
     old_password: str
@@ -538,10 +539,13 @@ async def update_debug_config(
 @router.get("/api/proxy/config")
 async def get_proxy_config(token: str = Depends(verify_admin_token)) -> dict:
     """Get proxy configuration"""
-    config = await proxy_manager.get_proxy_config()
+    proxy_config = await proxy_manager.get_proxy_config()
+    pool_count = await proxy_manager.get_proxy_pool_count()
     return {
-        "proxy_enabled": config.proxy_enabled,
-        "proxy_url": config.proxy_url
+        "proxy_enabled": proxy_config.proxy_enabled,
+        "proxy_url": proxy_config.proxy_url,
+        "proxy_pool_enabled": proxy_config.proxy_pool_enabled,
+        "proxy_pool_count": pool_count
     }
 
 @router.post("/api/proxy/config")
@@ -551,7 +555,11 @@ async def update_proxy_config(
 ):
     """Update proxy configuration"""
     try:
-        await proxy_manager.update_proxy_config(request.proxy_enabled, request.proxy_url)
+        await proxy_manager.update_proxy_config(
+            request.proxy_enabled, 
+            request.proxy_url,
+            request.proxy_pool_enabled
+        )
         return {"success": True, "message": "Proxy configuration updated"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

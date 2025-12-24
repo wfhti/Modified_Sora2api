@@ -106,6 +106,7 @@ class ProxyConfig(BaseModel):
     id: int = 1
     proxy_enabled: bool  # Read from database, initialized from setting.toml on first startup
     proxy_url: Optional[str] = None  # Read from database, initialized from setting.toml on first startup
+    proxy_pool_enabled: bool = False  # Enable proxy pool rotation from data/proxy.txt
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

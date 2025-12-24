@@ -250,6 +250,20 @@ class Database:
                         except Exception as e:
                             print(f"  ✗ Failed to add column '{col_name}': {e}")
 
+            # Check and add missing columns to proxy_config table
+            if await self._table_exists(db, "proxy_config"):
+                columns_to_add = [
+                    ("proxy_pool_enabled", "BOOLEAN DEFAULT 0"),
+                ]
+
+                for col_name, col_type in columns_to_add:
+                    if not await self._column_exists(db, "proxy_config", col_name):
+                        try:
+                            await db.execute(f"ALTER TABLE proxy_config ADD COLUMN {col_name} {col_type}")
+                            print(f"  ✓ Added column '{col_name}' to proxy_config table")
+                        except Exception as e:
+                            print(f"  ✗ Failed to add column '{col_name}': {e}")
+
             # Ensure all config tables have their default rows
             # Pass config_dict if available to initialize from setting.toml
             await self._ensure_config_rows(db, config_dict)
@@ -1122,14 +1136,14 @@ class Database:
             # This should not happen in normal operation as _ensure_config_rows should create it
             return ProxyConfig(proxy_enabled=False)
     
-    async def update_proxy_config(self, enabled: bool, proxy_url: Optional[str]):
+    async def update_proxy_config(self, enabled: bool, proxy_url: Optional[str], proxy_pool_enabled: bool = False):
         """Update proxy configuration"""
         async with aiosqlite.connect(self.db_path) as db:
             await db.execute("""
                 UPDATE proxy_config
-                SET proxy_enabled = ?, proxy_url = ?, updated_at = CURRENT_TIMESTAMP
+                SET proxy_enabled = ?, proxy_url = ?, proxy_pool_enabled = ?, updated_at = CURRENT_TIMESTAMP
                 WHERE id = 1
-            """, (enabled, proxy_url))
+            """, (enabled, proxy_url, proxy_pool_enabled))
             await db.commit()
 
     # Watermark-free config operations

@@ -35,6 +35,7 @@ error_ban_threshold = 3
 [proxy]
 proxy_enabled = false
 proxy_url = ""
+proxy_pool_enabled = false
 
 [watermark_free]
 watermark_free_enabled = false
