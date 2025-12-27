@@ -9,10 +9,15 @@ from typing import Optional, Dict, Any, Tuple
 from curl_cffi.requests import AsyncSession
 from curl_cffi import CurlMime
 from .proxy_manager import ProxyManager
-from .cloudflare_solver import solve_cloudflare_challenge, is_cloudflare_challenge
+from .cloudflare_solver import (
+    solve_cloudflare_challenge,
+    is_cloudflare_challenge,
+    get_cloudflare_state,
+)
 from ..core.config import config
 from ..core.logger import debug_logger
 from ..core.http_utils import build_sora_headers, DEFAULT_USER_AGENT
+
 
 class SoraClient:
     """Sora API client with proxy support"""
@@ -23,8 +28,6 @@ class SoraClient:
         self.timeout = config.sora_timeout
         # 持久化 session 字典，按 token 分组维护 cookie
         self._sessions: Dict[str, AsyncSession] = {}
-        # 保存 Cloudflare 返回的 user_agent
-        self._cf_user_agent: Optional[str] = None
 
     @staticmethod
     def _generate_sentinel_token() -> str:
@@ -34,7 +37,9 @@ class SoraClient:
         生成10-20个字符的随机字符串（字母+数字）
         """
         length = random.randint(10, 20)
-        random_str = ''.join(random.choices(string.ascii_letters + string.digits, k=length))
+        random_str = "".join(
+            random.choices(string.ascii_letters + string.digits, k=length)
+        )
         return random_str
 
     @staticmethod
@@ -100,10 +105,19 @@ class SoraClient:
             return timeline
 
     async def _get_session(self, token: str) -> AsyncSession:
-        """获取或创建持久化 session，维护 Cloudflare cookie"""
+        """获取或创建持久化 session，并应用全局 Cloudflare cookies"""
+        cf_state = get_cloudflare_state()
+        
         if token not in self._sessions:
             self._sessions[token] = AsyncSession(impersonate="chrome120")
-        return self._sessions[token]
+        
+        session = self._sessions[token]
+        
+        # 应用全局 Cloudflare cookies 到 session
+        if cf_state.is_valid:
+            cf_state.apply_to_session(session)
+        
+        return session
 
     async def _make_request(self, method: str, endpoint: str, token: str,
                            json_data: Optional[Dict] = None,
@@ -126,9 +140,10 @@ class SoraClient:
         import asyncio
         
         proxy_url = await self.proxy_manager.get_proxy_url()
+        cf_state = get_cloudflare_state()
 
-        # 使用公共模块构建请求头
-        user_agent = self._cf_user_agent or DEFAULT_USER_AGENT
+        # 使用全局 Cloudflare 状态的 user_agent，如果有的话
+        user_agent = cf_state.user_agent or DEFAULT_USER_AGENT
         sentinel = self._generate_sentinel_token() if add_sentinel_token else None
         content_type = None if multipart else "application/json"
         
@@ -141,7 +156,7 @@ class SoraClient:
 
         url = f"{self.base_url}{endpoint}"
         
-        # 使用持久化 session 维护 cookie
+        # 使用持久化 session 维护 cookie（会自动应用全局 Cloudflare cookies）
         session = await self._get_session(token)
         
         attempt = 0
@@ -150,9 +165,13 @@ class SoraClient:
             if not infinite_retry_429 and attempt > max_retries:
                 break
             
-            # 更新 headers 中的 User-Agent（可能在重试时已更新）
-            if self._cf_user_agent:
-                headers["User-Agent"] = self._cf_user_agent
+            # 每次请求前更新 headers 中的 User-Agent（使用全局状态）
+            if cf_state.user_agent:
+                headers["User-Agent"] = cf_state.user_agent
+            
+            # 重新应用全局 Cloudflare cookies 到 session
+            if cf_state.is_valid:
+                cf_state.apply_to_session(session)
                 
             kwargs = {
                 "headers": headers,
@@ -215,26 +234,17 @@ class SoraClient:
                     response.text
                 )
                 
-                # 如果是 Cloudflare challenge，每次都重新获取 cookie
+                # 如果是 Cloudflare challenge，获取新的 cookie（会自动更新全局状态）
                 if is_cf:
                     print(f"🔄 检测到 Cloudflare challenge ({response.status_code}, attempt {attempt + 1})，重新获取 cookie...")
                     try:
+                        # solve_cloudflare_challenge 会自动更新全局状态
                         cf_result = await solve_cloudflare_challenge(proxy_url)
                         if cf_result:
-                            cf_cookies = cf_result.get("cookies", {})
-                            cf_user_agent = cf_result.get("user_agent")
-                            
-                            # 注入 cookies 到 session
-                            for name, value in cf_cookies.items():
-                                session.cookies.set(name, value, domain=".sora.chatgpt.com")
-                            
-                            # 保存并使用新的 user_agent
-                            if cf_user_agent:
-                                self._cf_user_agent = cf_user_agent
-                                headers["User-Agent"] = cf_user_agent
-                                print(f"✅ Cloudflare cookies 和 User-Agent 已更新")
-                            else:
-                                print("✅ Cloudflare cookies 已注入")
+                            # 全局状态已更新，重新应用到当前 session
+                            cf_state.apply_to_session(session)
+                            if cf_state.user_agent:
+                                headers["User-Agent"] = cf_state.user_agent
                             
                             attempt += 1
                             continue

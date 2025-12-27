@@ -10,9 +10,14 @@ from ..core.database import Database
 from ..core.models import Token, TokenStats
 from ..core.config import config
 from .proxy_manager import ProxyManager
-from .cloudflare_solver import solve_cloudflare_challenge, is_cloudflare_challenge
+from .cloudflare_solver import (
+    solve_cloudflare_challenge,
+    is_cloudflare_challenge,
+    get_cloudflare_state,
+)
 from ..core.logger import debug_logger
 from ..core.http_utils import build_simple_headers
+
 
 class TokenManager:
     """Token lifecycle manager"""
@@ -22,9 +27,7 @@ class TokenManager:
         self._lock = asyncio.Lock()
         self.proxy_manager = ProxyManager(db)
         self.fake = Faker()
-        # 保存 Cloudflare 返回的 user_agent
-        self._cf_user_agent: Optional[str] = None
-    
+
     async def _make_sora_request(
         self,
         session: AsyncSession,
@@ -34,7 +37,7 @@ class TokenManager:
         proxy_url: Optional[str] = None,
         json_data: Optional[Dict] = None,
         max_cf_retries: int = 3,
-        **kwargs
+        **kwargs,
     ) -> Any:
         """通用 Sora API 请求方法，自动处理 Cloudflare challenge
         
@@ -51,15 +54,21 @@ class TokenManager:
         Returns:
             Response 对象
         """
-        # 使用保存的 user_agent
-        if self._cf_user_agent and "User-Agent" not in headers:
-            headers["User-Agent"] = self._cf_user_agent
+        cf_state = get_cloudflare_state()
+        
+        # 使用全局 Cloudflare 状态的 user_agent
+        if cf_state.user_agent and "User-Agent" not in headers:
+            headers["User-Agent"] = cf_state.user_agent
+        
+        # 应用全局 Cloudflare cookies 到 session
+        if cf_state.is_valid:
+            cf_state.apply_to_session(session)
         
         request_kwargs = {
             "headers": headers,
             "timeout": 30,
             "impersonate": "chrome",
-            **kwargs
+            **kwargs,
         }
         
         if proxy_url:
@@ -69,6 +78,13 @@ class TokenManager:
             request_kwargs["json"] = json_data
         
         for attempt in range(max_cf_retries + 1):
+            # 每次请求前更新 headers 和 cookies（使用全局状态）
+            if cf_state.user_agent:
+                headers["User-Agent"] = cf_state.user_agent
+                request_kwargs["headers"] = headers
+            if cf_state.is_valid:
+                cf_state.apply_to_session(session)
+            
             if method.upper() == "GET":
                 response = await session.get(url, **request_kwargs)
             elif method.upper() == "POST":
@@ -78,39 +94,27 @@ class TokenManager:
             
             # 使用公共模块检测 Cloudflare challenge
             if response.status_code in [429, 403]:
-                response_text = response.text[:1000] if response.text else ''
+                response_text = response.text[:1000] if response.text else ""
                 is_cf = is_cloudflare_challenge(
                     response.status_code,
                     dict(response.headers),
-                    response_text
+                    response_text,
                 )
                 
                 if is_cf and attempt < max_cf_retries:
-                    print(f"🔄 检测到 Cloudflare challenge ({response.status_code}, attempt {attempt + 1}/{max_cf_retries})，尝试解决...")
+                    print(
+                        f"🔄 检测到 Cloudflare challenge ({response.status_code}, attempt {attempt + 1}/{max_cf_retries})，尝试解决..."
+                    )
+                    # solve_cloudflare_challenge 会自动更新全局状态
                     cf_result = await solve_cloudflare_challenge(proxy_url)
                     if cf_result:
-                        cf_cookies = cf_result.get("cookies", {})
-                        cf_user_agent = cf_result.get("user_agent")
-                        
-                        # 注入 cookies
-                        for name, value in cf_cookies.items():
-                            session.cookies.set(name, value, domain=".sora.chatgpt.com")
-                        
-                        # 更新 user_agent
-                        if cf_user_agent:
-                            self._cf_user_agent = cf_user_agent
-                            headers["User-Agent"] = cf_user_agent
-                            request_kwargs["headers"] = headers
-                            print(f"✅ Cloudflare cookies 和 User-Agent 已更新")
-                        else:
-                            print("✅ Cloudflare cookies 已注入")
-                        
+                        # 全局状态已更新，下次循环会自动应用
                         continue
             
             return response
         
         return response
-    
+
     async def decode_jwt(self, token: str) -> dict:
         """Decode JWT token without verification"""
         try:
