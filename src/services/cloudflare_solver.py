@@ -203,13 +203,12 @@ async def solve_cloudflare_challenge(
         """同步请求函数，在独立线程中执行，使用标准库"""
         try:
             print(f"🔄 [线程] 开始请求 Cloudflare Solver API: {api_url}")
-            # 设置 socket 超时
-            socket.setdefaulttimeout(10)
             
             req = urllib.request.Request(api_url)
             req.add_header('User-Agent', 'Mozilla/5.0')
             
-            with urllib.request.urlopen(req, timeout=10) as response:
+            # Solver 需要时间完成验证，设置 120 秒超时
+            with urllib.request.urlopen(req, timeout=120) as response:
                 status_code = response.getcode()
                 data = json.loads(response.read().decode('utf-8'))
                 print(f"🔄 [线程] 请求完成，状态码: {status_code}")
@@ -218,7 +217,7 @@ async def solve_cloudflare_challenge(
             print(f"⚠️ [线程] URL错误: {e.reason}")
             return None
         except socket.timeout:
-            print(f"⚠️ [线程] Socket超时")
+            print(f"⚠️ [线程] Socket超时 (120秒)")
             return None
         except Exception as e:
             print(f"⚠️ [线程] 请求异常: {type(e).__name__}: {e}")
@@ -232,13 +231,13 @@ async def solve_cloudflare_challenge(
             loop = asyncio.get_running_loop()
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
                 try:
-                    # 设置 15 秒超时
+                    # 设置 130 秒超时（比 socket 超时稍长）
                     result = await asyncio.wait_for(
                         loop.run_in_executor(executor, _sync_request),
-                        timeout=15
+                        timeout=130
                     )
                 except asyncio.TimeoutError:
-                    print(f"⚠️ Cloudflare Solver API 请求超时 (15秒)")
+                    print(f"⚠️ Cloudflare Solver API 请求超时 (130秒)")
                     return None
             
             if result is None:
