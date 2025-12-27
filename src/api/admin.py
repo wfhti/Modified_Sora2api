@@ -690,12 +690,22 @@ async def refresh_cloudflare_credentials(token: str = Depends(verify_admin_token
         print(f"🔄 [API] solve_cloudflare_challenge 返回: {result is not None}", flush=True)
         sys.stdout.flush()
         if result:
+            print("🔄 [API] 获取 cf_state", flush=True)
+            sys.stdout.flush()
             cf_state = get_cloudflare_state()
-            return {
+            print("🔄 [API] 调用 get_status()", flush=True)
+            sys.stdout.flush()
+            status = cf_state.get_status()
+            print(f"🔄 [API] get_status() 返回: {status}", flush=True)
+            sys.stdout.flush()
+            response = {
                 "success": True,
                 "message": "Cloudflare credentials refreshed successfully",
-                "state": cf_state.get_status()
+                "state": status
             }
+            print(f"🔄 [API] 准备返回响应", flush=True)
+            sys.stdout.flush()
+            return response
         else:
             return {
                 "success": False,
