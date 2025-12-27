@@ -200,7 +200,9 @@ async def solve_cloudflare_challenge(
         try:
             print(f"🔄 调用 Cloudflare Solver API: {api_url} (尝试 {attempt}/{max_retries})")
             
-            async with httpx.AsyncClient(timeout=120) as client:
+            # 使用更细粒度的超时设置：连接超时10秒，读取超时120秒
+            timeout = httpx.Timeout(connect=10.0, read=120.0, write=10.0, pool=10.0)
+            async with httpx.AsyncClient(timeout=timeout) as client:
                 response = await client.get(api_url)
                 
                 if response.status_code == 200:
@@ -220,7 +222,15 @@ async def solve_cloudflare_challenge(
                         print(f"⚠️ Cloudflare Solver API 返回失败: {data.get('error')}")
                 else:
                     print(f"⚠️ Cloudflare Solver API 请求失败: {response.status_code}")
-                    
+        
+        except httpx.ConnectError as e:
+            print(f"⚠️ Cloudflare Solver API 连接失败: {e}")
+            # 连接失败时不重试，直接返回
+            return None
+        except httpx.ConnectTimeout as e:
+            print(f"⚠️ Cloudflare Solver API 连接超时: {e}")
+            # 连接超时时不重试，直接返回
+            return None
         except Exception as e:
             print(f"⚠️ Cloudflare Solver API 调用失败: {e}")
         

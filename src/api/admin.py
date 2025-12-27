@@ -658,10 +658,29 @@ async def get_cloudflare_state(token: str = Depends(verify_admin_token)) -> dict
 @router.post("/api/cloudflare/refresh")
 async def refresh_cloudflare_credentials(token: str = Depends(verify_admin_token)) -> dict:
     """Manually refresh Cloudflare credentials"""
+    import asyncio
     from ..services.cloudflare_solver import solve_cloudflare_challenge, get_cloudflare_state
+    from ..core.config import config
+    
+    # 检查是否启用了 Cloudflare Solver
+    if not config.cloudflare_solver_enabled:
+        return {
+            "success": False,
+            "message": "Cloudflare Solver 未启用，请先在配置中启用"
+        }
+    
+    if not config.cloudflare_solver_api_url:
+        return {
+            "success": False,
+            "message": "Cloudflare Solver API 地址未配置"
+        }
     
     try:
-        result = await solve_cloudflare_challenge()
+        # 设置超时，避免无限等待（缩短到60秒，因为连接超时已经是10秒）
+        result = await asyncio.wait_for(
+            solve_cloudflare_challenge(),
+            timeout=60
+        )
         if result:
             cf_state = get_cloudflare_state()
             return {
@@ -672,10 +691,18 @@ async def refresh_cloudflare_credentials(token: str = Depends(verify_admin_token
         else:
             return {
                 "success": False,
-                "message": "Failed to refresh Cloudflare credentials"
+                "message": "获取凭据失败，请检查 Solver 服务是否正常运行，或 API 地址是否正确"
             }
+    except asyncio.TimeoutError:
+        return {
+            "success": False,
+            "message": "获取凭据超时，请检查 Solver 服务是否正常运行"
+        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            "success": False,
+            "message": f"获取凭据失败: {str(e)}"
+        }
 
 @router.post("/api/cloudflare/clear")
 async def clear_cloudflare_credentials(token: str = Depends(verify_admin_token)) -> dict:
