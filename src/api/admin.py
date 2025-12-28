@@ -371,6 +371,49 @@ async def batch_test_tokens(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"批量测试失败: {str(e)}")
 
+
+@router.post("/api/tokens/batch-enable")
+async def batch_enable_tokens(token: str = Depends(verify_admin_token)):
+    """Enable all disabled tokens"""
+    try:
+        all_tokens = await db.get_all_tokens()
+        enabled_count = 0
+        
+        for t in all_tokens:
+            if not t.is_active:
+                await token_manager.enable_token(t.id)
+                enabled_count += 1
+        
+        return {
+            "success": True,
+            "message": f"已启用 {enabled_count} 个账号",
+            "enabled_count": enabled_count
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"批量启用失败: {str(e)}")
+
+
+@router.post("/api/tokens/batch-disable")
+async def batch_disable_tokens(token: str = Depends(verify_admin_token)):
+    """Disable all enabled tokens"""
+    try:
+        all_tokens = await db.get_all_tokens()
+        disabled_count = 0
+        
+        for t in all_tokens:
+            if t.is_active:
+                await token_manager.disable_token(t.id)
+                disabled_count += 1
+        
+        return {
+            "success": True,
+            "message": f"已禁用 {disabled_count} 个账号",
+            "disabled_count": disabled_count
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"批量禁用失败: {str(e)}")
+
+
 @router.post("/api/tokens/import")
 async def import_tokens(request: ImportTokensRequest, token: str = Depends(verify_admin_token)):
     """Import tokens in append mode (update if exists, add if not)"""
