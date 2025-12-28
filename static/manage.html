@@ -183,6 +183,10 @@
                                         一键禁用所有
                                         <p class="text-xs text-muted-foreground">禁用所有启用账号</p>
                                     </button>
+                                    <button onclick="batchDeleteDisabledTokens()" class="w-full text-left px-4 py-2 text-sm hover:bg-gray-100 text-red-600">
+                                        一键删除禁用
+                                        <p class="text-xs text-muted-foreground">删除所有禁用账号</p>
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -1159,7 +1163,8 @@
         batchTestAllTokens=async()=>{$('batchTestMenu').classList.add('hidden');if(!confirm('将测试所有账号，401错误自动禁用，有效账号自动启用，是否继续？'))return;showToast('开始批量测试所有账号...','info');try{const r=await apiRequest('/api/tokens/batch-test?only_active=false&only_disabled=false',{method:'POST'});if(!r)return;const d=await r.json();if(d.success){showToast(d.message,'success');await refreshTokens()}else{showToast('批量测试失败: '+(d.detail||d.message||'未知错误'),'error')}}catch(e){showToast('批量测试失败: '+e.message,'error')}},
         // 一键启用/禁用所有账号
         batchEnableAllTokens=async()=>{$('batchTestMenu').classList.add('hidden');if(!confirm('将启用所有已禁用的账号，是否继续？'))return;showToast('正在启用所有账号...','info');try{const r=await apiRequest('/api/tokens/batch-enable',{method:'POST'});if(!r)return;const d=await r.json();if(d.success){showToast(d.message,'success');await refreshTokens()}else{showToast('批量启用失败: '+(d.detail||d.message||'未知错误'),'error')}}catch(e){showToast('批量启用失败: '+e.message,'error')}},
-        batchDisableAllTokens=async()=>{$('batchTestMenu').classList.add('hidden');if(!confirm('将禁用所有已启用的账号，是否继续？'))return;showToast('正在禁用所有账号...','info');try{const r=await apiRequest('/api/tokens/batch-disable',{method:'POST'});if(!r)return;const d=await r.json();if(d.success){showToast(d.message,'success');await refreshTokens()}else{showToast('批量禁用失败: '+(d.detail||d.message||'未知错误'),'error')}}catch(e){showToast('批量禁用失败: '+e.message,'error')}};
+        batchDisableAllTokens=async()=>{$('batchTestMenu').classList.add('hidden');if(!confirm('将禁用所有已启用的账号，是否继续？'))return;showToast('正在禁用所有账号...','info');try{const r=await apiRequest('/api/tokens/batch-disable',{method:'POST'});if(!r)return;const d=await r.json();if(d.success){showToast(d.message,'success');await refreshTokens()}else{showToast('批量禁用失败: '+(d.detail||d.message||'未知错误'),'error')}}catch(e){showToast('批量禁用失败: '+e.message,'error')}},
+        batchDeleteDisabledTokens=async()=>{$('batchTestMenu').classList.add('hidden');if(!confirm('将永久删除所有已禁用的账号，此操作不可恢复，是否继续？'))return;showToast('正在删除禁用账号...','info');try{const r=await apiRequest('/api/tokens/batch-delete-disabled',{method:'DELETE'});if(!r)return;const d=await r.json();if(d.success){showToast(d.message,'success');await refreshTokens()}else{showToast('批量删除失败: '+(d.detail||d.message||'未知错误'),'error')}}catch(e){showToast('批量删除失败: '+e.message,'error')}};;
         window.addEventListener('DOMContentLoaded',()=>{checkAuth();refreshTokens();loadATAutoRefreshConfig()});
     </script>
 </body>
